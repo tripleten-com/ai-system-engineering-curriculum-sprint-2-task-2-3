@@ -1,0 +1,11 @@
+# Coldline
+# File: .gitattributes
+# Component: Git text policy
+# Purpose: Keep text line endings stable across Windows and Linux.
+# Interacts With: Git checkout and CI
+# Sprint/Task: Sprint 1 — Project 1
+# Concepts: Cross-platform reproducibility
+# Tools: Git
+
+* text=auto
+*.sh text eol=lf

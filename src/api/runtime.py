@@ -1,0 +1,154 @@
+"""Coldline.
+
+===================
+
+File:              src/api/runtime.py
+Component:         API — Runtime
+Purpose:           Expose initialized runtime adapters through provider-neutral collaborators.
+Interacts With:    FastAPI, domain, ports, and adapters
+Sprint/Task:       Sprint 2 — Project 2
+Concepts:          HTTP boundary, composition, asynchronous work
+Tools:             Python 3.12, PostgreSQL, Redis, boto3
+"""
+
+import asyncpg
+from redis.asyncio import Redis
+
+from domain.contracts import (
+    ExceptionJob,
+    ExceptionRecord,
+    ExceptionState,
+    JobDelivery,
+    RetrievalRequest,
+    RetrievalResult,
+)
+from domain.repositories import DocumentRepository, ExceptionRepository
+from ports import JobQueue, ObjectStore, Retriever
+
+
+class RuntimeBindings:
+    """Bridge FastAPI construction with adapters created during lifespan startup.
+
+    FastAPI needs the application object before its asynchronous lifespan runs.
+    This small forwarding object receives PostgreSQL, Redis, object-storage,
+    and retrieval adapters at startup and closes them through the composition
+    root at shutdown.
+    """
+
+    def __init__(self) -> None:
+        """Create an uninitialized binding set."""
+        self.pool: asyncpg.Pool | None = None
+        self.redis: Redis | None = None
+        self.repository: ExceptionRepository | None = None
+        self.queue: JobQueue | None = None
+        self.object_store: ObjectStore | None = None
+        self.retriever: Retriever | None = None
+        self.document_repository: DocumentRepository | None = None
+
+    def documents(self) -> DocumentRepository | None:
+        """Resolve the composed document repository at call time.
+
+        The repository is built during startup, after the HTTP application
+        object exists, so the document service receives this provider rather
+        than a value. ``None`` means the student factory has not returned an
+        implementation yet.
+        """
+        return self.document_repository
+
+    async def get(self, exception_id: str) -> ExceptionRecord | None:
+        """Forward one repository read after startup."""
+        return await self._required_repository().get(exception_id)
+
+    async def create(self, record: ExceptionRecord) -> ExceptionRecord:
+        """Forward one repository create after startup."""
+        return await self._required_repository().create(record)
+
+    async def transition(
+        self,
+        exception_id: str,
+        expected: set[ExceptionState],
+        target: ExceptionState,
+        *,
+        summary: str | None = None,
+        failure_reason: str | None = None,
+    ) -> ExceptionRecord:
+        """Forward one repository transition after startup."""
+        return await self._required_repository().transition(
+            exception_id,
+            expected,
+            target,
+            summary=summary,
+            failure_reason=failure_reason,
+        )
+
+    async def publish(self, job: ExceptionJob) -> str:
+        """Forward one queue publication after startup."""
+        if self.queue is None:
+            raise RuntimeError("job queue is not initialized")
+        return await self.queue.publish(job)
+
+    async def read(self, *, block_ms: int = 1000) -> JobDelivery | None:
+        """Forward a queue read when a consumer composition uses these bindings."""
+        return await self._required_queue().read(block_ms=block_ms)
+
+    async def claim_stale(self, *, minimum_idle_ms: int) -> JobDelivery | None:
+        """Forward stale-delivery recovery when a consumer uses these bindings."""
+        return await self._required_queue().claim_stale(minimum_idle_ms=minimum_idle_ms)
+
+    async def acknowledge(self, message_id: str) -> None:
+        """Forward one queue acknowledgement."""
+        await self._required_queue().acknowledge(message_id)
+
+    async def queue_depth(self) -> int:
+        """Forward the queue-depth diagnostic."""
+        return await self._required_queue().queue_depth()
+
+    async def pending_count(self) -> int:
+        """Forward the pending-delivery diagnostic."""
+        return await self._required_queue().pending_count()
+
+    async def search_hybrid(self, request: RetrievalRequest) -> RetrievalResult:
+        """Forward one hybrid retrieval request after startup."""
+        if self.retriever is None:
+            raise RuntimeError("retriever is not initialized")
+        return await self.retriever.search_hybrid(request)
+
+    async def list_corpus_keys(self, prefix: str) -> list[str]:
+        """Forward one object-store listing so no route touches a cloud SDK."""
+        if self.object_store is None:
+            raise RuntimeError("object store is not initialized")
+        return await self.object_store.list_keys(prefix)
+
+    async def ready(self) -> bool:
+        """Return true only when every required API dependency answers.
+
+        Readiness is intentionally stricter than liveness. Sprint 2 adds the
+        object-storage dependency, and the corpus schema must exist as well: a
+        process that answers while its retrieval tables are missing is not
+        usable, so any dependency error returns ``False`` and Compose and
+        students receive a stable 503 response.
+        """
+        if self.pool is None or self.redis is None or self.object_store is None:
+            return False
+        try:
+            database_ready = await self.pool.fetchval("SELECT 1") == 1
+            corpus_ready = (
+                await self.pool.fetchval("SELECT to_regclass('public.chunks')") is not None
+            )
+            redis_ready = bool(await self.redis.ping())
+            await self.object_store.list_keys("corpus/")
+        except Exception:
+            return False
+        return database_ready and corpus_ready and redis_ready
+
+    def _required_repository(self) -> ExceptionRepository:
+        """Return the initialized repository or fail with a startup defect."""
+        if self.repository is None:
+            raise RuntimeError("exception repository is not initialized")
+        return self.repository
+
+    def _required_queue(self) -> JobQueue:
+        """Return the initialized job queue or fail with a startup defect."""
+        if self.queue is None:
+            raise RuntimeError("job queue is not initialized")
+        return self.queue

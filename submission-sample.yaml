@@ -1,0 +1,22 @@
+# Coldline - Task 2.3
+# File: submission-sample.yaml
+# Component: Fictional completed answer sheet
+# Purpose: Show the accepted shape.
+# Interacts With: docs/contracts/submission.schema.json
+# Sprint/Task: Sprint 2 - Project 2 / Task 2.3
+# Concepts: Answer-sheet shape
+# Tools: YAML
+
+# Keep answers: {} in submission.yaml; the sample shows the same empty mapping.
+# Complete the implementation and tests described in the Task contract.
+# Do not include secrets, personal data, or local absolute paths.
+
+# Task 2.3 — Step 1: Implement a data layer
+# Implement document and chunk repository mapping with parameterized queries.
+# Continue with scoped reads and committed-write visibility in Step 2, then
+# atomic writes and application integration in Step 3. Atomic writes either
+# commit together or leave none of the operation's rows behind on failure.
+# Source: docs/student/task-2-3-contract.md.
+# Your implementation and its tests provide the evidence for these Steps.
+# Keep this mapping empty; this Task has no direct-answer fields to complete.
+answers: {}
