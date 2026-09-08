@@ -14,6 +14,7 @@ Tools:             Python 3.12
 from __future__ import annotations
 
 import hashlib
+import http.client
 import os
 import platform
 import shutil
@@ -21,11 +22,15 @@ import stat
 import sys
 import tarfile
 import tempfile
+import time
+import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
 
 UV_VERSION = "0.11.8"
+DOWNLOAD_TIMEOUT_SECONDS = 30
+DOWNLOAD_ATTEMPTS = 3
 ARTIFACTS = {
     ("Darwin", "arm64"): (
         "uv-aarch64-apple-darwin.tar.gz",
@@ -66,7 +71,7 @@ def main() -> int:
     url = f"https://github.com/astral-sh/uv/releases/download/{UV_VERSION}/{artifact}"
     with tempfile.TemporaryDirectory(prefix="coldline-uv-") as temporary:
         archive = Path(temporary) / artifact
-        urllib.request.urlretrieve(url, archive)  # noqa: S310 - fixed HTTPS release URL
+        _download(url, archive)
         actual_hash = hashlib.sha256(archive.read_bytes()).hexdigest()
         if actual_hash != expected_hash:
             raise SystemExit(
@@ -88,6 +93,46 @@ def main() -> int:
             target.chmod(target.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     print(f"installed uv {UV_VERSION} at {installed}")
     return 0
+
+
+def _download(url: str, archive: Path) -> None:
+    """Retry transient release-download failures without retaining partial bytes."""
+    for attempt in range(DOWNLOAD_ATTEMPTS):
+        try:
+            with urllib.request.urlopen(url, timeout=DOWNLOAD_TIMEOUT_SECONDS) as response:
+                with archive.open("wb") as output:
+                    shutil.copyfileobj(response, output)
+                    expected_length = response.info().get("Content-Length")
+                    if expected_length is not None and output.tell() < int(expected_length):
+                        raise ConnectionError(
+                            f"incomplete uv archive: received {output.tell()} of "
+                            f"{expected_length} bytes"
+                        )
+            return
+        except (
+            urllib.error.URLError,
+            TimeoutError,
+            ConnectionError,
+            http.client.IncompleteRead,
+        ) as error:
+            archive.unlink(missing_ok=True)
+            if isinstance(error, urllib.error.HTTPError):
+                retryable = error.code == 429 or 500 <= error.code < 600
+                error.close()
+            else:
+                reason = error.reason if isinstance(error, urllib.error.URLError) else error
+                retryable = isinstance(
+                    reason, (TimeoutError, ConnectionError, http.client.IncompleteRead)
+                )
+            if not retryable or attempt == DOWNLOAD_ATTEMPTS - 1:
+                raise
+            delay = 2**attempt
+            print(
+                f"uv download failed ({error}); retrying in {delay}s "
+                f"(attempt {attempt + 2}/{DOWNLOAD_ATTEMPTS})",
+                file=sys.stderr,
+            )
+            time.sleep(delay)
 
 
 def _version(executable: Path) -> str:

@@ -94,8 +94,8 @@ def test_document_repository_satisfies_its_runtime_contracts() -> None:
 
     The script is piped in on standard input so the container image needs no
     test files, exactly as the Sprint 1 adapter contract does. It builds its own
-    pool and exercises durability across connections, domain mapping,
-    parameterized queries, scoped reads, and rollback.
+    pool and exercises committed-write visibility across connections, domain mapping,
+    parameterized queries, scope before result decoding, and rollback atomicity.
     """
     verifier = (TASK_ROOT / "tests" / "contract" / "data_layer_runtime.py").read_text(
         encoding="utf-8"
