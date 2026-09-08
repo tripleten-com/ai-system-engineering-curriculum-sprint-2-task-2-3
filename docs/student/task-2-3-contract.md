@@ -66,9 +66,11 @@ The point of each row:
   `read committed` that snapshot includes everything committed before the statement began, so a row
   the reader can see is a row your write actually committed.
 - The check **asserts** the isolation level and that no transaction is open, rather than assuming
-  them. At `repeatable read` or `serializable` the reader's first statement would pin one snapshot
-  for the whole connection, and a later statement could miss a commit that landed in between —
-  which would quietly make the check weaker than it reads.
+  them. In an explicit `repeatable read` or `serializable` transaction, successive reads
+  share a transaction snapshot and can miss a commit that landed after that snapshot.
+  The snapshot belongs to the transaction, not the whole connection; without an explicit
+  transaction, each statement still runs in a separate transaction. See PostgreSQL's
+  [transaction isolation documentation](https://www.postgresql.org/docs/16/transaction-iso.html).
 
 This is a **committed-write visibility** check, and that is all it is. It is not a durability or
 crash-recovery exercise: nothing here kills the server, pulls a volume, or makes any claim about
@@ -99,7 +101,7 @@ application-integration check fails with that reason.
 
 | Check | Where it looks |
 |---|---|
-| durability across connections | a second PostgreSQL connection, not the pool |
+| committed-write visibility | a second PostgreSQL connection, not the pool |
 | domain mapping and provenance | the mapped record compared against the written record |
 | scoped reads | another tenancy and a restricted tier, at both document and chunk level |
 | parameterized queries | adversarial title text, round-tripped exactly |

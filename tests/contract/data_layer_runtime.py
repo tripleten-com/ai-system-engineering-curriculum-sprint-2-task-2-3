@@ -7,11 +7,13 @@ Component:         Contract tests — Data layer runtime
 Purpose:           Verify the document repository against real PostgreSQL.
 Interacts With:    PostgreSQL, the student repository, domain contracts
 Sprint/Task:       Sprint 2 — Project 2 / Task 2.3
-Concepts:          Durability, scoped reads, parameterized SQL, atomic writes
+Concepts:          Committed-write visibility, scoped reads, parameterized SQL, atomic writes
 Tools:             Python 3.12, PostgreSQL, asyncpg
 """
 
 import asyncio
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -80,14 +82,16 @@ def scope(tenant_id: str, clearance: AccessTier) -> AuthorizationContext:
 
 
 async def verify() -> None:
-    """Verify durability, mapping, scoping, parameterization, and atomicity."""
-    pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=4)
+    """Verify committed-write visibility, mapping, scoped reads, and atomicity."""
+    read_probe = ScopedReadProbe()
+    pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=4, init=read_probe.install)
     assert pool is not None
     repository = PostgresDocumentRepository(pool)
     try:
+        await _verify_probe_controls(pool, read_probe)
         await _verify_durability_and_mapping(pool, repository)
         await _verify_parameterized_queries(pool, repository)
-        await _verify_scoped_reads(repository)
+        await _verify_scoped_reads(repository, read_probe)
         await _verify_atomic_rollback(pool, repository)
         await _verify_no_partial_state_on_duplicate(pool, repository)
     finally:
@@ -101,8 +105,71 @@ async def verify() -> None:
 
 # The PostgreSQL default, and the level this repository runs at: nothing in
 # compose.yaml, the initialization SQL, or the pool setup changes it. The
-# committed-write check below is only sound at this level, so it asserts it.
+# committed-write check below verifies this declared setup explicitly.
 EXPECTED_ISOLATION = "read committed"
+
+
+class ScopedReadProbe:
+    """Observe denied fixture content at the driver's result-decoding boundary.
+
+    Decoder callbacks run before fetch, prepared-statement, or cursor results
+    reach repository code. Unique fixture identifiers also occur in chunk IDs
+    and provenance URIs, so returning a row as JSON or renaming its columns does
+    not hide it. No SQL spelling, predicate arrangement, or query plan is assumed.
+    This checks the supplied fixture cases, not arbitrary data-flow obfuscation.
+    """
+
+    def __init__(self) -> None:
+        """Start with no scoped operation active."""
+        self._denied: tuple[str, ...] = ()
+        self._leaked = False
+
+    async def install(self, connection: asyncpg.Connection) -> None:
+        """Keep normal string values while observing PostgreSQL textual results."""
+        for name in ("text", "varchar", "bpchar", "json", "jsonb"):
+            await connection.set_type_codec(
+                name, schema="pg_catalog", encoder=str, decoder=self.decode, format="text"
+            )
+
+    def decode(self, value: str) -> str:
+        """Reject denied fixture content before repository mapping or filtering."""
+        if any(marker in value for marker in self._denied):
+            self._leaked = True
+            raise AssertionError("SQL returned out-of-scope document or chunk content")
+        return value
+
+    @contextmanager
+    def denying(self, *records: DocumentRecord) -> Iterator[None]:
+        """Require each awaited read to exclude these rows before driver decoding."""
+        self._denied = tuple(record.document_id for record in records)
+        self._leaked = False
+        try:
+            yield
+        finally:
+            self._denied = ()
+            # A repository that catches a decoding error and then returns None
+            # still fetched forbidden content, so that error cannot hide the leak.
+            assert not self._leaked, "SQL returned out-of-scope document or chunk content"
+
+
+async def _verify_probe_controls(pool: asyncpg.Pool, read_probe: ScopedReadProbe) -> None:
+    """Prove the real driver's callbacks preserve allowed values and reject denied ones."""
+    denied = document("decoder-negative-control")
+    statements = (
+        "SELECT $1::text",
+        "SELECT json_build_object('document_id', $1::text)",
+        "SELECT jsonb_build_object('document_id', $1::text)",
+    )
+    for statement in statements:
+        with read_probe.denying(denied):
+            assert await pool.fetchval(statement, "allowed-control") is not None
+        try:
+            with read_probe.denying(denied):
+                await pool.fetchval(statement, denied.document_id)
+        except AssertionError as error:
+            assert str(error) == "SQL returned out-of-scope document or chunk content"
+        else:
+            raise AssertionError("the database result-decoding scope probe is not active")
 
 
 async def _verify_durability_and_mapping(
@@ -125,22 +192,20 @@ async def _verify_durability_and_mapping(
     # includes every transaction committed before the statement began. So a row
     # this connection can see is a row some other connection committed.
     #
-    # The isolation level is asserted rather than trusted: at REPEATABLE READ or
-    # SERIALIZABLE the first statement would pin a snapshot for the whole
-    # connection, and a later one could miss a commit that landed in between -
-    # which would make this check weaker than it reads. Nothing in this
-    # repository changes the server default, and this is where that is verified.
+    # Assert the published setup rather than infer it. REPEATABLE READ and
+    # SERIALIZABLE retain a snapshot across an explicit transaction, not across
+    # the lifetime of a connection. With no explicit transaction, each statement
+    # still runs in a separate transaction. This check does not test crash recovery.
     separate = await asyncpg.connect(DATABASE_URL)
     try:
         isolation = await separate.fetchval("SHOW transaction_isolation")
         assert isolation == EXPECTED_ISOLATION, (
-            f"the reading connection is at {isolation!r} isolation, and this check is only "
-            f"sound at {EXPECTED_ISOLATION!r}: a snapshot pinned for the whole connection "
-            "could miss a commit that landed after the first statement"
+            f"the reading connection is at {isolation!r} isolation; the published verification "
+            f"setup requires {EXPECTED_ISOLATION!r}"
         )
         assert not separate.is_in_transaction(), (
-            "the reading connection has an open transaction, so its snapshot predates the "
-            "write it is about to look for"
+            "the reading connection has an explicit transaction; this check requires each "
+            "statement to run in its own implicit transaction"
         )
         row = await separate.fetchrow(
             "SELECT * FROM documents WHERE document_id = $1", record.document_id
@@ -206,8 +271,10 @@ async def _verify_parameterized_queries(
     assert absent is None, "an injected predicate returned a row"
 
 
-async def _verify_scoped_reads(repository: PostgresDocumentRepository) -> None:
-    """Check that reads are constrained by tenancy and by classification tier."""
+async def _verify_scoped_reads(
+    repository: PostgresDocumentRepository, read_probe: ScopedReadProbe
+) -> None:
+    """Check scope both before row decoding and after domain mapping."""
     own = document("scope-own", tenant_id=TENANT_A)
     other = document("scope-other", tenant_id=TENANT_B)
     restricted = document("scope-restricted", tenant_id=TENANT_A, access_tier=AccessTier.RESTRICTED)
@@ -215,33 +282,39 @@ async def _verify_scoped_reads(repository: PostgresDocumentRepository) -> None:
         await repository.save_document(record, chunk_document(record))
 
     standard_scope = scope(TENANT_A, AccessTier.STANDARD)
-    assert await repository.get_document(other.document_id, scope=standard_scope) is None, (
-        "another tenancy's document was readable"
-    )
-    assert await repository.get_document(restricted.document_id, scope=standard_scope) is None, (
-        "a restricted document was readable by a standard caller"
-    )
-    assert await repository.get_document(own.document_id, scope=standard_scope) is not None
+    with read_probe.denying(other, restricted):
+        assert await repository.get_document(other.document_id, scope=standard_scope) is None, (
+            "another tenancy's document was readable"
+        )
+        assert (
+            await repository.get_document(restricted.document_id, scope=standard_scope) is None
+        ), "a restricted document was readable by a standard caller"
+        assert await repository.get_document(own.document_id, scope=standard_scope) is not None
 
-    listed = await repository.list_documents(scope=standard_scope)
-    identifiers = {record.document_id for record in listed}
-    assert other.document_id not in identifiers, "listing leaked another tenancy"
-    assert restricted.document_id not in identifiers, "listing leaked a restricted tier"
-    assert own.document_id in identifiers
-    assert [record.document_id for record in listed] == sorted(identifiers), (
-        "listing is not ordered by identifier"
-    )
+        listed = await repository.list_documents(scope=standard_scope)
+        identifiers = {record.document_id for record in listed}
+        assert other.document_id not in identifiers, "listing leaked another tenancy"
+        assert restricted.document_id not in identifiers, "listing leaked a restricted tier"
+        assert own.document_id in identifiers
+        assert [record.document_id for record in listed] == sorted(identifiers), (
+            "listing is not ordered by identifier"
+        )
+
+        # Chunk reads carry the same scope. A chunk-level leak is the same leak.
+        assert await repository.get_chunks(other.document_id, scope=standard_scope) == []
+        assert await repository.get_chunks(restricted.document_id, scope=standard_scope) == []
+        assert await repository.get_chunks(own.document_id, scope=standard_scope) != []
 
     cleared_scope = scope(TENANT_A, AccessTier.RESTRICTED)
-    assert await repository.get_document(restricted.document_id, scope=cleared_scope) is not None
-    assert await repository.get_document(other.document_id, scope=cleared_scope) is None, (
-        "clearance must not cross a tenancy boundary"
-    )
-
-    # Chunk reads carry the same scope. A chunk-level leak is the same leak.
-    assert await repository.get_chunks(other.document_id, scope=standard_scope) == []
-    assert await repository.get_chunks(restricted.document_id, scope=standard_scope) == []
-    assert await repository.get_chunks(own.document_id, scope=standard_scope) != []
+    with read_probe.denying(other):
+        assert (
+            await repository.get_document(restricted.document_id, scope=cleared_scope) is not None
+        )
+        assert await repository.get_document(other.document_id, scope=cleared_scope) is None, (
+            "clearance must not cross a tenancy boundary"
+        )
+        assert await repository.get_chunks(restricted.document_id, scope=cleared_scope) != []
+        assert await repository.get_chunks(other.document_id, scope=cleared_scope) == []
 
 
 async def _verify_atomic_rollback(

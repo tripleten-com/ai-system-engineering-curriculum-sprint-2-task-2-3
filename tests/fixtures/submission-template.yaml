@@ -1,0 +1,151 @@
+# Coldline - Task 1.1
+# File: submission.yaml
+# Edit only answer values in submission.yaml; keep the supplied keys and types.
+# Empty strings, nulls, and placeholder text are incomplete and fail verification.
+# Use submission-sample.yaml for YAML formatting only; do not copy its fictional values.
+# Do not include secrets, personal data, or local absolute paths.
+# Use your Task 1.1 runtime observations and the numbered lesson architecture map.
+
+answers:
+
+  # Task 1.1 — Step 1: Compose stack and architecture orientation
+  # Record the readiness result from your Task 1.1 runtime workflow.
+  # Reference: the named Task lesson Step and docs/student/task-1-1-baseline.md.
+  #
+  # runtime_state options (use exact values):
+  # - ready: The required runtime workflow reached its ready state.
+  # - blocked: A problem prevented completion of the required runtime workflow.
+  # Choose one string from the runtime_state options above.
+  runtime_state: ""
+
+  # Task 1.1 — Step 3: Capturing baseline request traces
+  # Identify your baseline run using the identifier printed by poe scenario.
+  # Reference: the named Task lesson Step and docs/student/task-1-1-baseline.md.
+  # Scenario identifier printed by `poe scenario`; 8-100 characters.
+  scenario_id: ""
+
+  # Task 1.1 — Step 1: Compose stack and architecture orientation
+  # Identify all seven numbered components in the lesson architecture map. Use every component
+  # option exactly once.
+  # Reference: the named Task lesson Step and docs/student/task-1-1-baseline.md.
+  #
+  # component options (use exact values):
+  # - api: The application service that handles HTTP requests.
+  # - redis-streams: The Redis stream used to carry queued jobs.
+  # - worker: The background process that consumes and processes jobs.
+  # - postgresql: The relational database used to persist application records.
+  # - jaeger: The tool used to inspect distributed traces and their spans.
+  # - prometheus: The service that collects and queries time-series metrics.
+  # - grafana: The tool that displays metrics in dashboards.
+  architecture_map:
+    # Name the component at diagram position 1.
+    # Choose one string from the component options above.
+    component_1: ""
+    # Name the component at diagram position 2.
+    # Choose one string from the component options above.
+    component_2: ""
+    # Name the component at diagram position 3.
+    # Choose one string from the component options above.
+    component_3: ""
+    # Name the component at diagram position 4.
+    # Choose one string from the component options above.
+    component_4: ""
+    # Name the component at diagram position 5.
+    # Choose one string from the component options above.
+    component_5: ""
+    # Name the component at diagram position 6.
+    # Choose one string from the component options above.
+    component_6: ""
+    # Name the component at diagram position 7.
+    # Choose one string from the component options above.
+    component_7: ""
+
+  # Task 1.1 — Step 2: The five application ports
+  # List only the application port interfaces you observed as active in your running configuration.
+  # Reference: the named Task lesson Step and docs/student/task-1-1-baseline.md.
+  #
+  # active_ports options (use exact values):
+  # - ModelProvider: The application interface for requesting model output.
+  # - Retriever: The application interface for retrieving relevant context.
+  # - ObjectStore: The application interface for storing and retrieving objects.
+  # - JobQueue: The application interface for publishing and consuming background jobs.
+  # - SecretProvider: The application interface for obtaining configured secrets.
+  # Step 2: List the active application ports you observed, one choice per line.
+  # YAML list: choose 1-5 unique values from the active_ports options above; order does not matter.
+  # Replace every XXX placeholder; add or remove list items as needed.
+  active_ports:
+    - "XXX"
+    - "XXX"
+
+  # Task 1.1 — Step 3: Capturing baseline request traces
+  # Record the API-side trace identity from your own baseline run in Jaeger.
+  # Reference: the named Task lesson Step and docs/student/task-1-1-baseline.md.
+  # Step 3: Copy the API trace ID from Jaeger; use one lowercase 32-hex value.
+  api_trace_id: ""
+
+  # Task 1.1 — Step 3: Capturing baseline request traces
+  # Record the worker-side trace identity from your own baseline run in Jaeger.
+  # Reference: the named Task lesson Step and docs/student/task-1-1-baseline.md.
+  # Step 3: Copy the worker trace ID from Jaeger; use one lowercase 32-hex value.
+  worker_trace_id: ""
+
+  # Task 1.1 — Step 3: Capturing baseline request traces
+  # Classify one observed or missing connection using your baseline traces and telemetry. Choose
+  # different expected_behavior and observed_result values.
+  # Reference: the named Task lesson Step and docs/student/task-1-1-baseline.md.
+  #
+  # source_component / target_component options (use exact values):
+  # - api: The application service that handles HTTP requests.
+  # - worker: The background process that consumes and processes jobs.
+  # - redis-streams: The Redis stream used to carry queued jobs.
+  # - postgresql: The relational database used to persist application records.
+  # - model-provider: The component that supplies model output.
+  # - opentelemetry: The instrumentation and context mechanisms used to produce telemetry.
+  # - jaeger: The tool used to inspect distributed traces and their spans.
+  # - prometheus: The service that collects and queries time-series metrics.
+  # - grafana: The tool that displays metrics in dashboards.
+  #
+  # connection_type options (use exact values):
+  # - http-request: An HTTP request from one component to another.
+  # - database-write: A change persisted to a database.
+  # - queue-publish: A producer placing a job on a queue.
+  # - queue-consume: A consumer receiving a job from a queue.
+  # - model-call: A request for model output.
+  # - trace-context: Trace identity and parent information passed between operations.
+  # - telemetry-export: Sending recorded telemetry to a receiving system.
+  # - metrics-scrape: Collecting metric samples from an exposed endpoint.
+  # - dashboard-query: A dashboard requesting data from its configured source.
+  #
+  # expected_behavior / observed_result options (use exact values):
+  # - same-trace: Source and target spans use the same trace ID.
+  # - separate-traces: Source and target spans use different trace IDs.
+  # - metrics-only: Metrics show each component, but no trace connects them.
+  # - not-observed: The supplied evidence shows no telemetry for the connection.
+  evidence_gap:
+    # Component at the start of the connection.
+    # Choose one string from the source_component / target_component options above.
+    source_component: ""
+    # Component at the receiving end of the connection.
+    # Choose one string from the source_component / target_component options above.
+    target_component: ""
+    # Kind of interaction being examined.
+    # Choose one string from the connection_type options above.
+    connection_type: ""
+    # Trace or metric relationship you expected to find.
+    # Choose one string from the expected_behavior / observed_result options above.
+    expected_behavior: ""
+    # Trace or metric relationship present in your evidence.
+    # Choose one string from the expected_behavior / observed_result options above.
+    observed_result: ""
+
+  # Task 1.1 — Step 3: Capturing baseline request traces
+  # Select one limitation on what your local baseline observations establish.
+  # Reference: the named Task lesson Step and docs/student/task-1-1-baseline.md.
+
+  # fidelity_limitation options (use exact values):
+  # local-compose-only: Local Docker Compose does not prove a managed deployment.
+  # deterministic-model-only: The supplied model adapter does not prove production-provider
+  #   behavior.
+  # no-production-scale: One local scenario does not prove production traffic or resilience.
+  # Choose one string from the fidelity_limitation options above.
+  fidelity_limitation: ""
