@@ -121,7 +121,7 @@ repository root/
 
 ## Overview
 
-Use the Task 2.2 lesson to decide what to do. This README covers local setup and repository
+Use the Task 2.3 lesson to decide what to do. This README covers local setup and repository
 orientation.
 
 1. `README.md` — local setup, commands, and permitted changes.
