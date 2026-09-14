@@ -89,7 +89,19 @@ def _psql(statement: str) -> str:
     return result.stdout.strip()
 
 
-def test_document_repository_satisfies_its_runtime_contracts() -> None:
+@pytest.mark.parametrize(
+    "case",
+    [
+        pytest.param("mapping", marks=pytest.mark.data_layer_mapping),
+        pytest.param("parameter-safety", marks=pytest.mark.data_layer_mapping),
+        pytest.param("scope-probe-controls", marks=pytest.mark.data_layer_scope),
+        pytest.param("scoped-reads", marks=pytest.mark.data_layer_scope),
+        pytest.param("committed-visibility", marks=pytest.mark.data_layer_scope),
+        pytest.param("atomic-rollback", marks=pytest.mark.data_layer_atomicity),
+        pytest.param("duplicate-consistency", marks=pytest.mark.data_layer_atomicity),
+    ],
+)
+def test_document_repository_satisfies_its_runtime_contracts(case: str) -> None:
     """Run the repository contracts inside the API container against real PostgreSQL.
 
     The script is piped in on standard input so the container image needs no
@@ -101,7 +113,7 @@ def test_document_repository_satisfies_its_runtime_contracts() -> None:
         encoding="utf-8"
     )
     result = subprocess.run(
-        [*COMPOSE, "exec", "-T", "api", "python", "-"],
+        [*COMPOSE, "exec", "-T", "api", "python", "-", "--case", case],
         cwd=TASK_ROOT,
         input=verifier,
         capture_output=True,
@@ -115,6 +127,7 @@ def test_document_repository_satisfies_its_runtime_contracts() -> None:
     assert "Data layer verification passed" in result.stdout
 
 
+@pytest.mark.data_layer_integration
 def test_application_persists_and_reads_through_the_repository() -> None:
     """The live application path must use the composed repository, not a stand-in.
 
@@ -189,6 +202,7 @@ def test_application_persists_and_reads_through_the_repository() -> None:
             _psql(f"DELETE FROM documents WHERE document_id = '{identifier}'")
 
 
+@pytest.mark.data_layer_integration
 def test_supplied_retrieval_still_reads_the_ingested_corpus() -> None:
     """The baseline loader and the retrieval adapter must stay operational."""
     corpus_documents = int(_psql("SELECT count(*) FROM documents WHERE document_id LIKE 'sop-%'"))

@@ -19,6 +19,7 @@ import pytest
 from adapters.persistence.document_repository import PostgresDocumentRepository
 from domain.contracts import AuthorizationContext, ChunkRecord, DocumentRecord
 from domain.repositories import readable
+from tests.contract import data_layer_runtime
 from tests.contract.data_layer_runtime import ScopedReadProbe, _verify_scoped_reads, document
 
 
@@ -112,3 +113,31 @@ def test_row_projection_and_json_do_not_hide_fixture_identity(representation: st
     with pytest.raises(AssertionError, match="SQL returned out-of-scope"):
         with probe.denying(denied):
             probe.decode(representation.format(denied.document_id))
+
+
+async def test_mapping_does_not_require_scope_filtering_or_a_listing() -> None:
+    """A partial reader can complete mapping before implementing SQL scope and listing."""
+    repository = RepositoryDouble(ScopedReadProbe(), "get_document")
+    await data_layer_runtime._verify_mapping(cast(PostgresDocumentRepository, repository))
+
+
+async def test_failed_case_does_not_suppress_unrelated_results(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A broken early mapping case must still report the later scope and rollback cases."""
+    visited: list[str] = []
+
+    async def run_case(case: str) -> None:
+        visited.append(case)
+        if case == "mapping":
+            raise AssertionError("provenance was dropped")
+
+    monkeypatch.setattr(data_layer_runtime, "verify_case", run_case)
+    with pytest.raises(AssertionError, match="verification failed: mapping"):
+        await data_layer_runtime.verify()
+    assert visited == list(data_layer_runtime.CASES)
+    output = capsys.readouterr().out
+    assert "FAIL mapping: AssertionError: provenance was dropped" in output
+    assert "PASS scoped-reads" in output
+    assert "PASS atomic-rollback" in output
+    assert "verification passed" not in output

@@ -11,6 +11,7 @@ Concepts:          Committed-write visibility, scoped reads, parameterized SQL, 
 Tools:             Python 3.12, PostgreSQL, asyncpg
 """
 
+import argparse
 import asyncio
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -81,26 +82,63 @@ def scope(tenant_id: str, clearance: AccessTier) -> AuthorizationContext:
     return AuthorizationContext(tenant_id=tenant_id, clearance=clearance)
 
 
-async def verify() -> None:
-    """Verify committed-write visibility, mapping, scoped reads, and atomicity."""
+# Explicit public cases: selection does not depend on function-name substrings.
+CASES = (
+    "mapping",
+    "parameter-safety",
+    "scope-probe-controls",
+    "scoped-reads",
+    "committed-visibility",
+    "atomic-rollback",
+    "duplicate-consistency",
+)
+
+
+async def verify_case(case: str) -> None:
+    """Run one case with its own pool, repository, fixtures, and cleanup."""
+    if case not in CASES:
+        raise ValueError(f"unknown data-layer case: {case}")
     read_probe = ScopedReadProbe()
     pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=4, init=read_probe.install)
     assert pool is not None
-    repository = PostgresDocumentRepository(pool)
     try:
-        await _verify_probe_controls(pool, read_probe)
-        await _verify_durability_and_mapping(pool, repository)
-        await _verify_parameterized_queries(pool, repository)
-        await _verify_scoped_reads(repository, read_probe)
-        await _verify_atomic_rollback(pool, repository)
-        await _verify_no_partial_state_on_duplicate(pool, repository)
+        repository = PostgresDocumentRepository(pool)
+        match case:
+            case "mapping":
+                await _verify_mapping(repository)
+            case "parameter-safety":
+                await _verify_parameterized_queries(pool, repository)
+            case "scope-probe-controls":
+                await _verify_probe_controls(pool, read_probe)
+            case "scoped-reads":
+                await _verify_scoped_reads(repository, read_probe)
+            case "committed-visibility":
+                await _verify_committed_visibility(pool, repository)
+            case "atomic-rollback":
+                await _verify_atomic_rollback(pool, repository)
+            case "duplicate-consistency":
+                await _verify_no_partial_state_on_duplicate(pool, repository)
     finally:
-        await _cleanup(pool)
-        await pool.close()
-    print(
-        "Data layer verification passed: committed-write visibility across connections at "
-        f"{EXPECTED_ISOLATION} isolation, mapping, scoping, and rollback atomicity are valid."
-    )
+        try:
+            await _cleanup(pool)
+        finally:
+            await pool.close()
+
+
+async def verify(cases: tuple[str, ...] = CASES) -> None:
+    """Report every selected case, then fail if any independently executed case failed."""
+    failures = []
+    for case in cases:
+        try:
+            await verify_case(case)
+        except Exception as error:
+            failures.append(case)
+            print(f"FAIL {case}: {type(error).__name__}: {error}", flush=True)
+        else:
+            print(f"PASS {case}", flush=True)
+    if failures:
+        raise AssertionError(f"Data layer verification failed: {', '.join(failures)}")
+    print("Data layer verification passed: " + ", ".join(cases))
 
 
 # The PostgreSQL default, and the level this repository runs at: nothing in
@@ -172,10 +210,10 @@ async def _verify_probe_controls(pool: asyncpg.Pool, read_probe: ScopedReadProbe
             raise AssertionError("the database result-decoding scope probe is not active")
 
 
-async def _verify_durability_and_mapping(
+async def _verify_committed_visibility(
     pool: asyncpg.Pool, repository: PostgresDocumentRepository
 ) -> None:
-    """Check that a committed write is visible to a separate connection and fully mapped."""
+    """Check the committed document and chunk rows from an independent connection."""
     record = document("durable")
     chunks = chunk_document(record)
     assert len(chunks) >= 1
@@ -227,6 +265,14 @@ async def _verify_durability_and_mapping(
         )
     finally:
         await separate.close()
+
+
+async def _verify_mapping(repository: PostgresDocumentRepository) -> None:
+    """Round-trip fields without requiring scope filtering, atomicity, or wiring."""
+    record = document("mapping")
+    chunks = chunk_document(record)
+    assert len(chunks) >= 1
+    await repository.save_document(record, chunks)
 
     # Domain mapping in the other direction: the record that comes back must
     # carry every label and custody field, not a subset of them.
@@ -397,4 +443,7 @@ async def _cleanup(pool: asyncpg.Pool) -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(verify())
+    parser = argparse.ArgumentParser(description="Run isolated PostgreSQL repository cases")
+    parser.add_argument("--case", choices=CASES, action="append")
+    arguments = parser.parse_args()
+    asyncio.run(verify(tuple(arguments.case) if arguments.case else CASES))

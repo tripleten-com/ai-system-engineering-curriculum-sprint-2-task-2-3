@@ -62,6 +62,10 @@ testpaths = ["tests"]
 pythonpath = ["."]
 asyncio_mode = "auto"
 markers = [
+  "data_layer_mapping: domain mapping and parameter safety",
+  "data_layer_scope: SQL scope and committed-write visibility",
+  "data_layer_atomicity: rollback and duplicate-write consistency",
+  "data_layer_integration: application HTTP persistence and corpus regression",
   "runtime: requires the running Docker Compose stack",
   "assessed: checks student work this Task assesses, so a fresh starter is expected to fail it",
   "submission_boundary: asserts a student submission stays inside this Task's editable paths",
@@ -111,7 +115,11 @@ smoke = "pytest tests/smoke -m runtime"
 e2e = "pytest tests/e2e -m runtime"
 telemetry-repair = "pytest tests/contract/test_telemetry_repair.py -m runtime"
 retrieval-runtime = "pytest tests/contract/test_retrieval_runtime.py -m runtime"
-data-layer-checks = "pytest tests/contract/test_data_layer.py -m runtime"
+data-layer-mapping = "pytest tests/contract/test_data_layer.py -m data_layer_mapping -v"
+data-layer-scope = "pytest tests/contract/test_data_layer.py -m data_layer_scope -v"
+data-layer-atomicity = "pytest tests/contract/test_data_layer.py -m data_layer_atomicity -v"
+data-layer-integration = "pytest tests/contract/test_data_layer.py -m data_layer_integration -v"
+data-layer-checks = "pytest tests/contract/test_data_layer.py -m runtime -v"
 # The data-layer checks run inside the API container and against the running
 # API, so both must be built from the current checkout. `start` is
 # `up --build --wait` and `ingest` is idempotent.
