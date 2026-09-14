@@ -40,7 +40,7 @@ about itself.
 | Checkpoint | Composed policy | `authorization_enforced` |
 |---|---|---|
 | Task 2.1 through Task 2.3 | `UnrestrictedAccessConstraints` | `false` — the context is carried and recorded but nothing is filtered, and a caller can retrieve another tenancy's chunk |
-| Task 2.4 onward | the student's access-constraint provider | `true` once the provider restricts tenancy or classification |
+| Task 2.4 onward | one student dimension plus the supplied complement | `true` with both tenancy and classification enforced |
 
 The Task 2.1 state is asserted by a runtime contract rather than left implicit, so enforcement
 cannot arrive early by accident and the Task 2.4 change is observable.

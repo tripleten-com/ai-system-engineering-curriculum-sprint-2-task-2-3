@@ -109,8 +109,27 @@ application-integration check fails with that reason.
 | application integration | the live HTTP path, cross-checked directly in PostgreSQL |
 | regression | the ingested corpus and the retrieval API still answer |
 
-Run them with `poe data-layer`, or the whole public gate with `poe verify`. Both need the stack
-started (`poe start`) and the corpus ingested (`poe ingest`).
+The focused commands name every check result and can be run as you implement each stage:
+
+| Command | Checks | Implementation needed |
+|---|---|---|
+| `poe data-layer-mapping` | domain and chunk mapping; parameter safety | parameterized save, document read, and chunk read with complete field mapping |
+| `poe data-layer-scope` | SQL scope at the driver boundary; committed-write visibility | working save and all scoped reads, including the ordered listing |
+| `poe data-layer-atomicity` | rollback after a failed chunk; duplicate-write consistency | document-plus-chunks transaction handling |
+| `poe data-layer-integration` | application HTTP persistence; corpus retrieval regression | completed repository and application wiring; ingested corpus |
+
+Before each focused runtime command, run `poe start` and `poe ready` so the API container uses your
+current source and PostgreSQL is ready. After source edits, repeat `poe start` to rebuild it.
+The first three groups instantiate the repository directly inside the API container and create
+and clean their own fixture rows. They do not require application wiring or corpus ingestion.
+The mapping group can pass before SQL scope filtering and atomic rollback are implemented; the
+scope group can pass before atomic rollback or application wiring. Run `poe ingest` before the
+integration group. Each repository case uses a fresh pool and repository instance; one failed
+case does not stop the remaining cases from reporting.
+
+`poe data-layer` retains the full path: rebuild/start, ingest, and all four groups, including the
+HTTP and corpus checks. `poe verify` remains the complete public submission gate. Passing a
+focused group alone is not Task completion.
 
 ## Permitted paths
 
