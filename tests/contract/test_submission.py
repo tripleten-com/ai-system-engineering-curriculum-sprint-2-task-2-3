@@ -43,14 +43,18 @@ def _task_root(tmp_path: Path, submission_text: str) -> Path:
 
 def test_shipped_answer_sheet_passes_as_it_stands(tmp_path: Path) -> None:
     """Accept the shipped empty mapping, which is this Task's correct answer sheet."""
-    root = _task_root(tmp_path, (ROOT / "submission.yaml").read_text(encoding="utf-8"))
+    root = _task_root(
+        tmp_path, (ROOT / "tests/fixtures/submission-template.yaml").read_text(encoding="utf-8")
+    )
 
     validate_submission(root / "submission.yaml", SCHEMA)
 
 
 def test_public_entrypoint_accepts_the_shipped_sheet(tmp_path: Path) -> None:
     """The public verifier must not require an answer this Task does not ask for."""
-    root = _task_root(tmp_path, (ROOT / "submission.yaml").read_text(encoding="utf-8"))
+    root = _task_root(
+        tmp_path, (ROOT / "tests/fixtures/submission-template.yaml").read_text(encoding="utf-8")
+    )
 
     assert main(root, changed_paths=[]) == 0
 

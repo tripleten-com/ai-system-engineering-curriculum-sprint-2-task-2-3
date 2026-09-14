@@ -12,7 +12,7 @@ Tools:             Python 3.12
 
 This is the reference service boundary from Task 2.2, now supplied and
 protected. Task 2.2 asked a student to extract one of two responsibilities;
-Proposed ADR-008 (ADR008-R09) makes retrieval orchestration the single
+ADR-008 (ADR008-R09) makes retrieval orchestration the single
 documented reference choice so that every later Task starts from one
 deterministic state. A student's own Task 2.2 implementation stays in that
 Task's pull request and is never required to match this file.

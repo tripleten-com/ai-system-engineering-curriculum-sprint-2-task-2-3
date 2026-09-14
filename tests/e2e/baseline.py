@@ -11,7 +11,9 @@ Concepts:          Deterministic evaluation, published criteria, evidence identi
 Tools:             Python 3.12, httpx
 """
 
+import json
 import sys
+from pathlib import Path
 
 import httpx
 
@@ -74,10 +76,22 @@ def main() -> int:
         chunks = relevant_chunks(query, responses[query.query_id])
         print(f"  {query.query_id:<22} {', '.join(chunks) or '(none)'}")
     print()
-    print(
-        "Record one query meeting the success criterion in answers.success_query_id and one "
-        "meeting the miss criterion in answers.miss_query_id."
+    schema = json.loads(
+        (Path(__file__).resolve().parents[2] / "docs/contracts/submission.schema.json").read_text(
+            encoding="utf-8"
+        )
     )
+    fields = schema["properties"]["answers"].get("properties", {})
+    if {"success_query_id", "miss_query_id"} <= fields.keys():
+        print(
+            "Record one query meeting the success criterion in answers.success_query_id and one "
+            "meeting the miss criterion in answers.miss_query_id."
+        )
+    else:
+        print(
+            "Use these baseline observations for orientation; "
+            "follow the current Task's answer sheet."
+        )
     return 0
 
 
