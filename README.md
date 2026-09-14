@@ -148,6 +148,23 @@ The application source lives in five flat packages:
 adapters. Process settings live in `src/api/config.py` and `src/worker/config.py`; other modules
 receive settings or collaborators through function and constructor arguments.
 
+## Inspect database and object-store evidence
+
+After `poe ingest`, use the PostgreSQL client already installed in the supplied container.
+These read-only commands show the table definitions and the stored chunk representations:
+
+```shell
+docker compose exec -T postgres psql -U coldline -d coldline -c "\d documents"
+docker compose exec -T postgres psql -U coldline -d coldline -c "\d chunks"
+docker compose exec -T postgres psql -U coldline -d coldline -c "SELECT chunk_id, document_id, chunk_index, vector_dims(embedding), search_document, tenant_id, access_tier FROM chunks ORDER BY chunk_id;"
+```
+
+Compare the results with `infra/postgres/002_retrieval_corpus.sql` and the supplied corpus
+fixtures. For object-store evidence, use `GET /api/v1/corpus/objects?prefix=corpus/`
+at the API URL above and inspect `docker compose logs localstack`. The initializer provisions
+resources and uploads the supplied objects; `poe ingest` loads the searchable database rows.
+Use the Task lesson to decide which observations to collect and which changes are permitted.
+
 ## The five ports
 
 Find the available interfaces in `src/ports/`. A port describes an application capability; an
